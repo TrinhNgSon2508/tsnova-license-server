@@ -2,13 +2,14 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from supabase import create_client
 from datetime import datetime, timezone
+import os
 
 
 app = FastAPI()
 
-SUPABASE_URL = "https://kwrjbmxkgbdufdttmvqu.supabase.co"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3cmpibXhrZ2JkdWZkdHRtdnF1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3ODQzMDM5OCwiZXhwIjoyMDk0MDA2Mzk4fQ.UWSh2UBNquy7aattJ63xhPEJgWdgBXwcBvct4_QbDeI"
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 supabase = create_client(
     SUPABASE_URL,

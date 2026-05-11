@@ -19,8 +19,7 @@ import uuid
 import subprocess
 import tkinter as tk
 
-API_URL = "https://kwrjbmxkgbdufdttmvqu.supabase.co/functions/v1/clever-processor"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3cmpibXhrZ2JkdWZkdHRtdnF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0MzAzOTgsImV4cCI6MjA5NDAwNjM5OH0.Kwk25BS_vsGmvLjTYLSX9j-PufndJNmcW3YbSi0GR0I"
+API_URL = "https://tsnova-license-server.onrender.com/verify"
 
 from tkinter import messagebox
 
@@ -52,17 +51,9 @@ license_entry.pack(pady=5)
 
 def verify_license():
 
-        key = license_entry.get()
+    key = license_entry.get()
 
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        headers = {
-            "Content-Type": "application/json",
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": f"Bearer {SUPABASE_ANON_KEY}"
-        }
+    try:
 
         r = requests.post(
             API_URL,
@@ -70,7 +61,49 @@ def verify_license():
                 "license_key": key,
                 "hwid": hwid
             },
-            headers=headers,
+            timeout=15
+        )
+
+        print("STATUS:", r.status_code)
+        print("TEXT:", r.text)
+
+        data = r.json()
+
+        if not data.get("valid"):
+
+            messagebox.showerror(
+                "Error",
+                data.get("reason", "Invalid License")
+            )
+
+            return
+
+        messagebox.showinfo(
+            "Success",
+            "License OK"
+        )
+
+        license_window.destroy()
+
+        start_main_app()
+
+    except Exception as e:
+
+        print(e)
+
+        messagebox.showerror(
+            "Connection Error",
+            str(e)
+        )
+
+        key = license_entry.get()
+
+        r = requests.post(
+            API_URL,
+            json={
+                "license_key": key,
+                "hwid": hwid
+            },
             timeout=10
         )
         

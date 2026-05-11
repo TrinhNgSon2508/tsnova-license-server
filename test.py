@@ -1,3 +1,5 @@
-import onnxruntime as ort
+from activate_client import activate_license
 
-print(ort.get_available_providers())
+result = activate_license("TSNOVA-TEST")
+
+print(result)
