@@ -104,7 +104,7 @@ def verify_license():
                 "license_key": key,
                 "hwid": hwid
             },
-            timeout=10
+            timeout=60
         )
         
         data = r.json()
