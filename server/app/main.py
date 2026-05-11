@@ -39,6 +39,9 @@ def activate(data: ActivateRequest):
         .select("*") \
         .eq("license_key", data.license_key.strip()) \
         .execute()
+    print("KEY =", data.license_key)
+    print("TABLE = licenses1")
+    print("RESULT =", result.data)
 
     if not result.data:
         return {
