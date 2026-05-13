@@ -1,18 +1,40 @@
-from license_manager import verify_saved_license
-from activate_ui import ActivateWindow
+# =========================================================
+# TSNOVA MAIN
+# =========================================================
 
-# import UI chính của TSNOVA
-from tsnova_ui import TSNovaApp
+import customtkinter as ctk
+
+from ui.main_window import MainWindow
 
 
-if verify_saved_license():
+# =========================================================
+# CONFIG
+# =========================================================
 
-    # mở app chính
-    app = TSNovaApp()
+ctk.set_appearance_mode(
+    "dark"
+)
+
+ctk.set_default_color_theme(
+    "blue"
+)
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
+def main():
+
+    app = MainWindow()
+
     app.mainloop()
 
-else:
 
-    # mở màn activation
-    activate_window = ActivateWindow()
-    activate_window.mainloop()
+# =========================================================
+# START
+# =========================================================
+
+if __name__ == "__main__":
+
+    main()

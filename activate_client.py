@@ -1,22 +1,103 @@
 import requests
+import hashlib
+import uuid
+import json
+import os
 
-from hwid import get_hwid
-import time
+
+API_URL = "http://127.0.0.1:8000"
+
+SESSION_FILE = "session.json"
 
 
-API_URL = "https://tsnova-license-server-1.onrender.com/activate"
+def get_hwid():
+
+    raw = str(uuid.getnode())
+
+    return hashlib.sha256(
+        raw.encode()
+    ).hexdigest()
+
+
+def save_session(license_key):
+
+    data = {
+        "license_key": license_key
+    }
+
+    with open(SESSION_FILE, "w") as f:
+
+        json.dump(data, f)
+
+
+def load_session():
+
+    if not os.path.exists(SESSION_FILE):
+        return None
+
+    with open(SESSION_FILE, "r") as f:
+
+        return json.load(f)
 
 
 def activate_license(license_key):
-    hwid = get_hwid()
-    payload = {"license_key": license_key, "hwid": hwid}
 
-    for _ in range(3):  # thử 3 lần
-        try:
-            response = requests.post(API_URL, json=payload, timeout=60)
-            return response.json()
-        except Exception as e:
-            time.sleep(5)  # chờ 5 giây rồi retry
-            last_error = str(e)
+    payload = {
+        "license_key": license_key,
+        "hwid": get_hwid(),
+        "device_name": os.environ.get(
+            "COMPUTERNAME",
+            "Windows PC"
+        )
+    }
 
-    return {"success": False, "message": last_error}
+    try:
+
+        r = requests.post(
+            f"{API_URL}/activate",
+            json=payload
+        )
+
+        data = r.json()
+
+        if data["success"]:
+
+            save_session(license_key)
+
+        return data
+
+    except Exception as e:
+
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
+
+def verify_saved_license():
+
+    session = load_session()
+
+    if not session:
+
+        return False
+
+    payload = {
+        "license_key": session["license_key"],
+        "hwid": get_hwid()
+    }
+
+    try:
+
+        r = requests.post(
+            f"{API_URL}/verify",
+            json=payload
+        )
+
+        data = r.json()
+
+        return data["success"]
+
+    except:
+
+        return False

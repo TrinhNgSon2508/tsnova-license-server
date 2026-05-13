@@ -1,22 +1,8 @@
 from fastapi import FastAPI
-from dotenv import load_dotenv
-from supabase import create_client
 from pydantic import BaseModel
-
-import os
-
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-print("URL =", SUPABASE_URL)
-
-
-supabase = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
-)
+from database import supabase
+from datetime import datetime
+import hashlib
 
 app = FastAPI()
 
@@ -24,77 +10,173 @@ app = FastAPI()
 class ActivateRequest(BaseModel):
     license_key: str
     hwid: str
+    device_name: str = "Unknown Device"
+
+
+class VerifyRequest(BaseModel):
+    license_key: str
+    hwid: str
 
 
 @app.get("/")
 def home():
-    return {"status": "online"}
+    return {"status": "TSNOVA API ONLINE"}
+
+
+@app.get("/test-db")
+def test_db():
+
+    result = supabase.table("licenses") \
+        .select("*") \
+        .execute()
+
+    return result.data
 
 
 @app.post("/activate")
 def activate(data: ActivateRequest):
 
+    hwid_hash = hashlib.sha256(
+        data.hwid.encode()
+    ).hexdigest()
+
     # tìm license
-    result = supabase.table("licenses1") \
+    license_result = supabase.table("licenses") \
         .select("*") \
         .eq("license_key", data.license_key.strip()) \
         .execute()
-    print("KEY =", data.license_key)
-    print("TABLE = licenses1")
-    print("RESULT =", result.data)
 
-    if not result.data:
+    print(license_result.data)
+
+    if not license_result.data:
         return {
             "success": False,
             "message": "Invalid license key"
         }
 
-    license_data = result.data[0]
+    license_data = license_result.data[0]
 
-    if not license_data["active"]:
+    # check status
+    if license_data["status"] != "active":
         return {
             "success": False,
-            "message": "License disabled"
+            "message": "License inactive"
         }
 
-    license_id = license_data["id"]
-    max_devices = license_data["max_devices"]
+    # check expire
+    expires_at = datetime.fromisoformat(
+        license_data["expires_at"].replace("Z", "")
+    )
 
-    # lấy devices hiện tại
-    devices = supabase.table("device_bindings") \
+    if expires_at < datetime.utcnow():
+        return {
+            "success": False,
+            "message": "License expired"
+        }
+
+    # lấy plan
+    plan_result = supabase.table("plans") \
         .select("*") \
-        .eq("license_id", license_id) \
+        .eq("id", license_data["plan_id"]) \
         .execute()
 
-    device_list = devices.data
+    plan_data = plan_result.data[0]
 
-    # check HWID đã tồn tại chưa
-    for device in device_list:
+    max_devices = plan_data["max_devices"]
 
-        if device["hwid"] == data.hwid:
+    # check device tồn tại chưa
+    existing_device = supabase.table("devices") \
+        .select("*") \
+        .eq("license_id", license_data["id"]) \
+        .eq("hwid_hash", hwid_hash) \
+        .execute()
 
-            return {
-                "success": True,
-                "message": "Welcome back"
-            }
+    if existing_device.data:
 
-    # vượt quá số máy
-    if len(device_list) >= max_devices:
+        return {
+            "success": True,
+            "message": "Welcome back"
+        }
+
+    # đếm devices
+    devices_result = supabase.table("devices") \
+        .select("*") \
+        .eq("license_id", license_data["id"]) \
+        .execute()
+
+    if len(devices_result.data) >= max_devices:
 
         return {
             "success": False,
             "message": "Device limit reached"
         }
 
-    # thêm máy mới
-    supabase.table("device_bindings") \
-        .insert({
-            "license_id": license_id,
-            "hwid": data.hwid
-        }) \
-        .execute()
+    # add device
+    supabase.table("devices").insert({
+        "license_id": license_data["id"],
+        "hwid_hash": hwid_hash,
+        "device_name": data.device_name
+    }).execute()
 
     return {
         "success": True,
-        "message": "New device activated"
+        "message": "Activation successful"
+    }
+
+
+@app.post("/verify")
+def verify(data: VerifyRequest):
+
+    hwid_hash = hashlib.sha256(
+        data.hwid.encode()
+    ).hexdigest()
+
+    # tìm license
+    license_result = supabase.table("licenses") \
+        .select("*") \
+        .eq("license_key", data.license_key.strip()) \
+        .execute()
+
+    if not license_result.data:
+        return {
+            "success": False,
+            "message": "Invalid license"
+        }
+
+    license_data = license_result.data[0]
+
+    # check status
+    if license_data["status"] != "active":
+        return {
+            "success": False,
+            "message": "License inactive"
+        }
+
+    # check expire
+    expires_at = datetime.fromisoformat(
+        license_data["expires_at"].replace("Z", "")
+    )
+
+    if expires_at < datetime.utcnow():
+        return {
+            "success": False,
+            "message": "License expired"
+        }
+
+    # check device
+    device_result = supabase.table("devices") \
+        .select("*") \
+        .eq("license_id", license_data["id"]) \
+        .eq("hwid_hash", hwid_hash) \
+        .execute()
+
+    if not device_result.data:
+        return {
+            "success": False,
+            "message": "Device not activated"
+        }
+
+    return {
+        "success": True,
+        "message": "License verified"
     }

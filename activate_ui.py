@@ -1,8 +1,24 @@
+API_URL = "http://127.0.0.1:8000"
+
+import requests
+import hashlib
+import uuid
+import json
+import os
 import customtkinter as ctk
 
 from activate_client import activate_license
 from license_manager import save_license_key
 from tsnova_ui import TSNovaApp
+
+
+def get_hwid():
+
+    raw = str(uuid.getnode())
+
+    return hashlib.sha256(
+        raw.encode()
+    ).hexdigest()
 
 
 class ActivateWindow(ctk.CTk):

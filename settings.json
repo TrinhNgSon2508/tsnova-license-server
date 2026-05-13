@@ -1,0 +1,8 @@
+{
+    "theme": "light",
+    "output_dir": "outputs",
+    "preview_size": 180,
+    "mode": "HD",
+    "selected_model": "default",
+    "save_format": "PNG"
+}

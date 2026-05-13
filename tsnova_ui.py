@@ -1,177 +1,55 @@
 # tsnova_ui.py
 
 import os
-import threading
-import customtkinter as ctk
-from tkinterdnd2 import DND_FILES, TkinterDnD
-from PIL import Image
-from customtkinter import CTkImage
-from transformers import AutoModelForImageSegmentation
-from torchvision import transforms
-import torch.nn.functional as F
-import torch
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-from PIL import ImageGrab
 import time
-import requests
-import uuid
-import subprocess
+import threading
 import tkinter as tk
 
-API_URL = "https://tsnova-license-server.onrender.com/verify"
+import customtkinter as ctk
+import torch
 
 from tkinter import messagebox
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
-hwid = subprocess.check_output(
-    "wmic csproduct get uuid"
-).decode().split("\n")[1].strip()
-
-
-license_window = tk.Tk()
-
-license_window.title("TSNOVA License")
-license_window.geometry("350x180")
-
-
-label = tk.Label(
-    license_window,
-    text="Enter License Key"
+from PIL import (
+    Image,
+    ImageGrab
 )
 
-label.pack(pady=10)
+from customtkinter import CTkImage
+from torchvision import transforms
 
-
-license_entry = tk.Entry(
-    license_window,
-    width=35
+from license.activate_client import (
+    verify_license_key,
+    save_license,
+    load_license
 )
 
-license_entry.pack(pady=5)
-
-def verify_license():
-
-    key = license_entry.get()
-
-    try:
-
-        r = requests.post(
-            API_URL,
-            json={
-                "license_key": key,
-                "hwid": hwid
-            },
-            timeout=15
-        )
-
-        print("STATUS:", r.status_code)
-        print("TEXT:", r.text)
-
-        data = r.json()
-
-        if not data.get("valid"):
-
-            messagebox.showerror(
-                "Error",
-                data.get("reason", "Invalid License")
-            )
-
-            return
-
-        messagebox.showinfo(
-            "Success",
-            "License OK"
-        )
-
-        license_window.destroy()
-
-        start_main_app()
-
-    except Exception as e:
-
-        print(e)
-
-        messagebox.showerror(
-            "Connection Error",
-            str(e)
-        )
-
-        key = license_entry.get()
-
-        r = requests.post(
-            API_URL,
-            json={
-                "license_key": key,
-                "hwid": hwid
-            },
-            timeout=60
-        )
-        
-        data = r.json()
-
-        print(r.text)
-        print(r.status_code)
-
-        data = r.json()
-
-        print(data)
-        if not data["valid"]:
-
-            messagebox.showerror(
-                "Error",
-                "Invalid License"
-            )
-
-            return
-
-        messagebox.showinfo(
-            "Success",
-            "License OK"
-        )
-
-        license_window.destroy()
-
-        start_main_app()
-
-
-verify_button = tk.Button(
-    license_window,
-    text="Verify License",
-    command=verify_license
+from usage_manager import (
+    can_use,
+    add_usage,
+    get_remaining
 )
 
-verify_button.pack(pady=20) 
+from model_loader import (
+    load_hd_model,
+    load_fast_model,
+    device
+)
 
-print("Loading BiRefNet...")
+from core.image_processor import (
+    remove_background_image
+)
 
-from model_loader import model, device
+from core.file_manager import (
+    scan_images_from_drop
+)
 
+from ui.preview_manager  import (
+    update_preview
+)
 
-model.to(device)
-
-if device == "cuda":
-    model.half()
-
-model.eval()
-
-transform_image = transforms.Compose([
-    transforms.Resize((1024, 1024)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        [0.485, 0.456, 0.406],
-        [0.229, 0.224, 0.225]
-    )
-])
-
-
-# =========================
-# AI MODEL
-# =========================
-
-print("Loading BiRefNet...")
-
-
-print("BiRefNet loaded!")
+from config import *
 
 # =========================
 # CONFIG
@@ -180,18 +58,60 @@ print("BiRefNet loaded!")
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+current_mode = "fast"
+
+CURRENT_PLAN = "FREE"
+IS_PRO = False
+
 selected_files = set()
 preview_images = []
+
 stop_requested = False
+
 # =========================
-# APP
+# LOAD MODELS
+# =========================
+
+
+# =========================
+# LICENSE WINDOW
+# =========================
+
+license_window = ctk.CTkToplevel(parent)
+
+license_window.title("TSNOVA License")
+license_window.geometry("350x180")
+license_window.resizable(False, False)
+
+label = tk.Label(
+    license_window,
+    text="Enter License Key"
+)
+
+label.pack(pady=10)
+
+license_entry = tk.Entry(
+    license_window,
+    width=35
+)
+
+license_entry.pack(pady=5)
+
+# =========================
+# MAIN APP
 # =========================
 
 def start_main_app():
 
-    app = TkinterDnD.Tk()
-    app.title("TSNOVA Remove")
-    app.geometry("1200x700")
+    global stop_requested
+
+    app = ctk.CTkToplevel(parent)
+    app.iconbitmap("assets/icon.ico")
+
+    app.title(APP_NAME)
+    app.geometry(
+    f"{APP_WIDTH}x{APP_HEIGHT}"
+)
     app.configure(bg="#111111")
 
     # =========================
@@ -205,7 +125,11 @@ def start_main_app():
         fg_color="#1e1e1e"
     )
 
-    sidebar.pack(side="left", fill="y")
+    sidebar.pack(
+        side="left",
+        fill="y"
+    )
+
     sidebar.pack_propagate(False)
 
     logo = ctk.CTkLabel(
@@ -231,7 +155,10 @@ def start_main_app():
         font=("Arial", 12)
     )
 
-    footer.pack(side="bottom", pady=20)
+    footer.pack(
+        side="bottom",
+        pady=20
+    )
 
     # =========================
     # MAIN CONTENT
@@ -242,14 +169,21 @@ def start_main_app():
         fg_color="#111111"
     )
 
-    main_frame.pack(side="right", fill="both", expand=True)
+    main_frame.pack(
+        side="right",
+        fill="both",
+        expand=True
+    )
 
     content_frame = ctk.CTkFrame(
         main_frame,
         fg_color="transparent"
     )
 
-    content_frame.pack(anchor="n", pady=20)
+    content_frame.pack(
+        anchor="n",
+        pady=20
+    )
 
     # =========================
     # TITLE
@@ -275,6 +209,100 @@ def start_main_app():
 
     status_label.pack(pady=(0, 10))
 
+    usage_label = ctk.CTkLabel(
+        content_frame,
+        text=f"Free Uses Left Today: {get_remaining()}",
+        font=("Arial", 16)
+    )
+
+    usage_label.pack(pady=(0, 10))
+
+    # =========================
+    # MODE SWITCH
+    # =========================
+
+    def set_mode(mode):
+
+        global current_mode
+
+        if mode == "hd" and not IS_PRO:
+
+            messagebox.showwarning(
+                "PRO Required",
+                "HD Mode is available for PRO users only."
+            )
+
+            return
+
+        current_mode = mode
+
+        if mode == "fast":
+
+            fast_button.configure(
+                fg_color="#3b82f6"
+            )
+
+            hd_button.configure(
+                fg_color="#2a2a2a"
+            )
+
+            status_label.configure(
+                text="Fast Remove Mode ⚡"
+            )
+
+        else:
+
+            hd_button.configure(
+                fg_color="#3b82f6"
+            )
+
+            fast_button.configure(
+                fg_color="#2a2a2a"
+            )
+
+            status_label.configure(
+                text="HD Remove Mode ✨"
+            )
+
+    mode_frame = ctk.CTkFrame(
+        content_frame,
+        fg_color="transparent"
+    )
+
+    mode_frame.pack(pady=(0, 20))
+
+    fast_button = ctk.CTkButton(
+        mode_frame,
+        text="⚡ Fast Remove\nQuick processing",
+        width=220,
+        height=70,
+        font=("Arial", 16, "bold"),
+        command=lambda: set_mode("fast")
+    )
+
+    fast_button.grid(
+        row=0,
+        column=0,
+        padx=10
+    )
+
+    hd_button = ctk.CTkButton(
+        mode_frame,
+        text="✨ HD Remove\nBest quality",
+        width=220,
+        height=70,
+        font=("Arial", 16, "bold"),
+        command=lambda: set_mode("hd")
+    )
+
+    hd_button.grid(
+        row=0,
+        column=1,
+        padx=10
+    )
+
+    set_mode("fast")
+
     # =========================
     # PROGRESS BAR
     # =========================
@@ -285,6 +313,7 @@ def start_main_app():
     )
 
     progressbar.pack(pady=(0, 20))
+
     progressbar.set(0)
 
     # =========================
@@ -296,26 +325,45 @@ def start_main_app():
         fg_color="transparent"
     )
 
-    preview_frame.pack(pady=(0, 20))
+    preview_frame.pack(pady=(0, 5))
 
+    compare_frame = ctk.CTkFrame(
+        content_frame,
+        fg_color="transparent"
+    )
 
-            
+    compare_frame.pack(pady=(0, 10))
+
+    before_label = ctk.CTkLabel(
+        compare_frame,
+        text=""
+    )
+
+    before_label.grid(
+        row=0,
+        column=0,
+        padx=20
+    )
+
+    after_label = ctk.CTkLabel(
+        compare_frame,
+        text=""
+    )
+
+    after_label.grid(
+        row=0,
+        column=1,
+        padx=20
+    )
+
     # =========================
     # FUNCTIONS
     # =========================
-    
-
-    def clear_preview():
-
-        for widget in preview_frame.winfo_children():
-            widget.destroy()
-
-
-    def update_preview(files):
 
         global preview_images
 
         clear_preview()
+
         preview_images.clear()
 
         max_preview = min(len(files), 8)
@@ -325,6 +373,7 @@ def start_main_app():
             try:
 
                 image = Image.open(file)
+
                 image.thumbnail((120, 120))
 
                 background = Image.new(
@@ -364,8 +413,10 @@ def start_main_app():
                     pady=10
                 )
 
-            except Exception as e:
-                print(e)
+            from core.error_handler import (
+                handle_error
+            )
+
         remaining = len(files) - max_preview
 
         if remaining > 0:
@@ -384,6 +435,7 @@ def start_main_app():
             )
 
     def drop(event):
+
         selected_files.clear()
 
         preview_images.clear()
@@ -391,35 +443,12 @@ def start_main_app():
         clear_preview()
 
         progressbar.set(0)
-        
 
         data = app.tk.splitlist(event.data)
 
-        image_ext = (".png", ".jpg", ".jpeg", ".webp")
+        files = scan_images_from_drop(data)
 
-        for item in data:
-
-            item = item.strip("{}")
-
-            # Folder
-            if os.path.isdir(item):
-
-                for root, dirs, files in os.walk(item):
-
-                    for file in files:
-
-                        if file.lower().endswith(image_ext):
-
-                            full_path = os.path.join(root, file)
-
-                            if full_path not in selected_files:
-                                selected_files.add(full_path)
-
-            # Single file
-            elif item.lower().endswith(image_ext):
-
-                if item not in selected_files:
-                    selected_files.append(item)
+        selected_files.update(files)
 
         if selected_files:
 
@@ -427,13 +456,19 @@ def start_main_app():
                 text=f"{len(selected_files)} images selected"
             )
 
-            update_preview(list(selected_files))
+            update_preview(
+                list(selected_files)
+            )
 
-            remove_button.configure(state="normal")
-
+            remove_button.configure(
+                state="normal"
+            )
 
     def process_images():
+
         start_time = time.time()
+
+        processed_count = 0
 
         selected_files_list = sorted(
             selected_files,
@@ -442,14 +477,18 @@ def start_main_app():
 
         output_folder = os.path.join(
             os.getcwd(),
-            "output"
+            OUTPUT_FOLDER
         )
 
-        os.makedirs(output_folder, exist_ok=True)
+        os.makedirs(
+            output_folder,
+            exist_ok=True
+        )
 
         total = len(selected_files)
 
         for index, file in enumerate(selected_files_list):
+
             if stop_requested:
 
                 app.after(
@@ -461,33 +500,19 @@ def start_main_app():
                 )
 
                 break
+
             try:
 
-                test_image = Image.open(file)
-                test_image.verify()
-
-                image = Image.open(file).convert("RGB")
-
-                original_size = image.size
-
-                input_tensor = transform_image(image).unsqueeze(0).to(device)
-
-                if device == "cuda":
-                    input_tensor = input_tensor.half()
-
-                with torch.no_grad():
-                    preds = model(input_tensor)[-1].sigmoid().cpu()
-
-                mask = preds[0].squeeze()
-
-                mask = transforms.ToPILImage()(mask)
-
-                mask = mask.resize(original_size)
-
-                image_rgba = image.convert("RGBA")
-                image_rgba.putalpha(mask)
+                image, image_rgba = remove_background_image(
+                    file,
+                    current_mode,
+                    fast_model,
+                    hd_model,
+                    device
+                )
 
                 filename = os.path.basename(file)
+
                 name, _ = os.path.splitext(filename)
 
                 output_path = os.path.join(
@@ -498,12 +523,76 @@ def start_main_app():
 
                     print(f"Skipped: {filename}")
 
+                    processed_count += 1
+
                     continue
 
                 image_rgba.save(output_path)
+                image.close()
+                image_rgba.close()
+
+                processed_count += 1
+
+                elapsed = time.time() - start_time
+
+                avg_time = elapsed / processed_count
+
+                remaining = total - processed_count
+
+                eta = round(
+                    avg_time * remaining,
+                    1
+                )
+
+                preview_before = image.copy()
+
+                preview_before.thumbnail(
+                    (250, 250),
+                    Image.LANCZOS
+                )
+
+                preview_after = image_rgba.copy()
+
+                preview_after.thumbnail(
+                    (250, 250),
+                    Image.LANCZOS
+                )
+
+                before_ctk = CTkImage(
+                    light_image=preview_before,
+                    dark_image=preview_before,
+                    size=preview_before.size
+                )
+
+                after_ctk = CTkImage(
+                    light_image=preview_after,
+                    dark_image=preview_after,
+                    size=preview_after.size
+                )
+
+                app.after(
+                    0,
+                    lambda b=before_ctk:
+                    before_label.configure(
+                        image=b,
+                        text="Before"
+                    )
+                )
+
+                app.after(
+                    0,
+                    lambda a=after_ctk:
+                    after_label.configure(
+                        image=a,
+                        text="After"
+                    )
+                )
 
                 if device == "cuda":
+
                     torch.cuda.empty_cache()
+                    import gc
+                    gc.collect()
 
             except Exception as e:
 
@@ -519,45 +608,81 @@ def start_main_app():
 
             app.after(
                 0,
-                lambda i=index, t=total:
+                lambda i=index, t=total, e=eta, a=avg_time:
                 status_label.configure(
-                    text=f"Processing {i+1}/{t} : {os.path.basename(selected_files_list[i])}"
+                    text=f"Processing {i+1}/{t} | ETA: {e}s | Speed: {round(a,2)}s/img"
                 )
             )
+
+        elapsed = round(
+            time.time() - start_time,
+            2
+        )
 
         app.after(
             0,
             lambda:
             status_label.configure(
                 text=f"TSNOVA Remove Complete! ({elapsed}s)"
-            ))
-        app.after(
-        0,
-        lambda: remove_button.configure(state="normal")
+            )
         )
 
         app.after(
             0,
-            lambda: output_button.configure(state="normal")
+            lambda:
+            remove_button.configure(
+                state="normal"
+            )
         )
 
         app.after(
             0,
-            lambda: delete_button.configure(state="normal")
+            lambda:
+            output_button.configure(
+                state="normal"
+            )
         )
-        
-        app.after(0, lambda: os.startfile(output_folder))
-        elapsed = round(time.time() - start_time, 2)
+
+        app.after(
+            0,
+            lambda:
+            delete_button.configure(
+                state="normal"
+            )
+        )
+
+        app.after(
+            0,
+            lambda:
+            os.startfile(output_folder)
+        )
 
     def stop_processing():
 
         global stop_requested
 
         stop_requested = True
+
     def remove_background():
 
         global stop_requested
-        stop_requested = False
+
+        if not IS_PRO:
+
+            if not can_use():
+
+                messagebox.showerror(
+                    "Limit Reached",
+                    "Daily free limit reached."
+                )
+
+                return
+
+            add_usage()
+
+            usage_label.configure(
+                text=f"Free Uses Left Today: {get_remaining()}"
+            )
 
         if not selected_files:
 
@@ -567,26 +692,38 @@ def start_main_app():
 
             return
 
+        stop_requested = False
+
         progressbar.set(0)
 
-        remove_button.configure(state="disabled")
-        output_button.configure(state="disabled")
-        delete_button.configure(state="disabled")
-        
-        threading.Thread(
-            target=process_images
-        ).start()
+        remove_button.configure(
+            state="disabled"
+        )
 
+        output_button.configure(
+            state="disabled"
+        )
+
+        delete_button.configure(
+            state="disabled"
+        )
+
+        threading.Thread(
+            target=process_images,
+            daemon=True
+        ).start()
 
     def open_output_folder():
 
         output_folder = os.path.join(
             os.getcwd(),
-            "output"
+            OUTPUT_FOLDER
         )
 
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
+        os.makedirs(
+            output_folder,
+            exist_ok=True
+        )
 
         os.startfile(output_folder)
 
@@ -603,78 +740,28 @@ def start_main_app():
         status_label.configure(
             text="Selection cleared"
         )
-        remove_button.configure(state="disabled")
 
-
-        output_folder = os.path.join(
-            os.getcwd(),
-            "output"
-        )
-
-        if os.path.exists(output_folder):
-
-            for file in os.listdir(output_folder):
-
-                file_path = os.path.join(output_folder, file)
-
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-
-        remove_button.configure(state="disabled")
-        # clear selected images
-        selected_files.clear()
-
-        # clear preview UI
-        clear_preview()
-
-        # clear cached previews
-        preview_images.clear()
-
-        # reset progress
-        progressbar.set(0)
-
-        status_label.configure(
-            text="All images cleared"
-        )
-
-        output_folder = os.path.join(
-            os.getcwd(),
-            "output"
-        )
-
-        if not os.path.exists(output_folder):
-            return
-
-        deleted = 0
-
-        for file in os.listdir(output_folder):
-
-            file_path = os.path.join(output_folder, file)
-
-            if os.path.isfile(file_path):
-
-                os.remove(file_path)
-                deleted += 1
-
-        status_label.configure(
-            text=f"Deleted {deleted} images"
+        remove_button.configure(
+            state="disabled"
         )
 
     def paste_image(event=None):
 
-        global selected_files
-
         image = ImageGrab.grabclipboard()
 
         if image is None:
+
             return
 
         input_folder = os.path.join(
             os.getcwd(),
-            "input"
+            INPUT_FOLDER
         )
 
-        os.makedirs(input_folder, exist_ok=True)
+        os.makedirs(
+            input_folder,
+            exist_ok=True
+        )
 
         temp_path = os.path.join(
             input_folder,
@@ -691,11 +778,18 @@ def start_main_app():
 
         selected_files.add(temp_path)
 
-        update_preview(list(selected_files))
+        update_preview(
+            list(selected_files)
+        )
 
         status_label.configure(
             text="Pasted image from clipboard"
         )
+
+        remove_button.configure(
+            state="normal"
+        )
+
     # =========================
     # BUTTONS
     # =========================
@@ -753,13 +847,147 @@ def start_main_app():
     # =========================
 
     app.drop_target_register(DND_FILES)
-    app.dnd_bind("<<Drop>>", drop)
+
+    app.dnd_bind(
+        "<<Drop>>",
+        drop
+    )
 
     # =========================
     # RUN
     # =========================
 
-    app.bind("<Control-v>", paste_image)
+    app.bind(
+        "<Control-v>",
+        paste_image
+    )
+
     app.mainloop()
 
-license_window.mainloop()
+# =========================
+# VERIFY LICENSE
+# =========================
+
+def verify_license():
+
+    global CURRENT_PLAN
+    global IS_PRO
+
+    key = license_entry.get().strip()
+
+    if not key:
+
+        messagebox.showerror(
+            "Error",
+            "Please enter license key"
+        )
+
+        return
+
+    try:
+
+        data = verify_license_key(key)
+
+        if not data.get("success"):
+
+            messagebox.showerror(
+                "Error",
+                data.get(
+                    "message",
+                    "Invalid License"
+                )
+            )
+
+            return
+
+        CURRENT_PLAN = data.get(
+            "plan",
+            "FREE"
+        )
+
+        IS_PRO = CURRENT_PLAN in [
+            "PRO",
+            "PREMIUM"
+        ]
+
+        save_license(
+            key,
+            CURRENT_PLAN
+        )
+
+        messagebox.showinfo(
+            "Success",
+            f"License Activated ({CURRENT_PLAN})"
+        )
+
+        license_window.destroy()
+
+        start_main_app()
+
+    except Exception as e:
+
+        messagebox.showerror(
+            "Connection Error",
+            str(e)
+        )
+
+# =========================
+# LICENSE BUTTON
+# =========================
+
+verify_button = tk.Button(
+    license_window,
+    text="Verify License",
+    command=verify_license
+)
+
+verify_button.pack(pady=20)
+
+# =========================
+# AUTO LOGIN
+# =========================
+
+def launch_app(
+    fast_model,
+    hd_model
+):
+
+    global CURRENT_PLAN
+    global IS_PRO
+
+    saved = load_license()
+
+    if saved:
+
+        try:
+
+            data = verify_license_key(
+                saved["key"]
+            )
+
+            if data.get("success"):
+
+                CURRENT_PLAN = data.get(
+                    "plan",
+                    "FREE"
+                )
+
+                IS_PRO = CURRENT_PLAN in [
+                    "PRO",
+                    "PREMIUM"
+                ]
+
+                license_window.destroy()
+
+                start_main_app()
+
+                return
+
+        except:
+            pass
+
+    license_window.mainloop()
+
+# =========================
+# START
+# =========================

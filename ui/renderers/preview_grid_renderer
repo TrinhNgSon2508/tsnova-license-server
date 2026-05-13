@@ -1,0 +1,72 @@
+import math
+
+import customtkinter as ctk
+
+from ui.preview_manager import (
+    preview_manager
+)
+
+
+class PreviewGridRenderer:
+
+    def __init__(
+        self,
+        container,
+        click_callback=None
+    ):
+
+        self.container = container
+
+        self.click_callback = click_callback
+
+        self.columns = 4
+
+        self.thumbnail_widgets = {}
+
+        self.visible_paths = []
+
+        self.cell_padding = 10
+
+    # =====================================================
+    # CLEAR GRID
+    # =====================================================
+
+    def clear(self):
+
+        for widget in self.thumbnail_widgets.values():
+
+            try:
+                widget.destroy()
+            except:
+                pass
+
+        self.thumbnail_widgets.clear()
+
+        self.visible_paths.clear()
+
+    # =====================================================
+    # REMOVE ITEM
+    # =====================================================
+
+    def remove_item(
+        self,
+        image_path
+    ):
+
+        widget = self.thumbnail_widgets.pop(
+            image_path,
+            None
+        )
+
+        if widget:
+
+            try:
+                widget.destroy()
+            except:
+                pass
+
+        if image_path in self.visible_paths:
+
+            self.visible_paths.remove(
+                self.clear()
+            )
